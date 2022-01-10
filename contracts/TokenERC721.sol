@@ -73,7 +73,7 @@ interface IERC721 {
     ) external;
 }
 
-contract TokenERC721 is IERC721, IERC721Receiver {
+contract TokenERC721 is IERC721 {
     using Address for address;
 
     bytes4 private constant _ERC721_RECEIVED = 0x150b7a02;
@@ -84,8 +84,11 @@ contract TokenERC721 is IERC721, IERC721Receiver {
     // token symbol
     string private _symbol;
 
-    // token URI
-    string private _tokenURI;
+    // base uri
+    string private _uriBase;
+
+    // mapping token id to its URI
+    mapping(uint256 => string) private _tokenURI;
 
     // mapping from token id to owner
     mapping(uint256 => address) private _owner;
@@ -102,11 +105,11 @@ contract TokenERC721 is IERC721, IERC721Receiver {
     constructor(
         string memory name,
         string memory symbol,
-        string memory uri
+        string memory uriBase
     ) {
         _name = name;
         _symbol = symbol;
-        _tokenURI = uri;
+        _uriBase = uriBase;
     }
 
     function balanceOf(address owner)
@@ -132,13 +135,15 @@ contract TokenERC721 is IERC721, IERC721Receiver {
         return owner;
     }
 
-    function _exist(uint256 tokenId) internal view virtual returns (bool) {
+    
+
+    function _exists(uint256 tokenId) internal view virtual returns (bool) {
         return _owner[tokenId] != address(0);
     }
 
     function mint(address to, uint256 tokenId) internal virtual {
         require(to != address(0), "mint to zero address");
-        require(!_exist(tokenId), "Token is available!");
+        require(!_exists(tokenId), "Token is available!");
         _balance[to] += 1;
         _owner[tokenId] = to;
         emit Transfer(address(0), to, tokenId);
@@ -154,6 +159,43 @@ contract TokenERC721 is IERC721, IERC721Receiver {
         uint256 tokenId,
         bytes memory _data
     ) internal virtual {}
+
+    function transferFrom(
+        address from,
+        address to,
+        uint256 tokenId
+    ) public virtual override {
+        require(
+            _isApprovedOrOwner(msg.sender, tokenId),
+            "Transfer caller is not owner nor approved"
+        );
+
+        _transfer(from, to, tokenId);
+    }
+    
+    function _mint(address to, uint256 tokenId) internal {
+        require(to != address(0), "ERC721: mint to the zero address");
+        require(!_exists(tokenId), "ERC721: token already minted");
+
+        _owner[tokenId] = to;
+        _balance[to] +=1;
+
+        emit Transfer(address(0), to, tokenId);
+    }
+
+    // check if the token is managed by the spender
+    function _isApprovedOrOwner(address spender, uint256 tokenId)
+        internal
+        view
+        virtual
+        returns (bool)
+    {
+        require(_exists(tokenId), "non-existent token");
+        address owner = TokenERC721.ownerOf(tokenId);
+        return (spender == owner ||
+            getApproved(tokenId) == spender ||
+            isApprovedForAll(owner, spender));
+    }
 
     function _transfer(
         address from,
@@ -231,12 +273,6 @@ contract TokenERC721 is IERC721, IERC721Receiver {
         emit Approval(owner, to, tokenId);
     }
 
-    /**
-     * @dev Gets the approved address for a token ID, or zero if no address set
-     * Reverts if the token ID does not exist.
-     * @param tokenId uint256 ID of the token to query the approval of
-     * @return address currently approved for the given token ID
-     */
     function getApproved(uint256 tokenId)
         public
         view
@@ -244,16 +280,10 @@ contract TokenERC721 is IERC721, IERC721Receiver {
         override
         returns (address)
     {
-        require(_exist(tokenId), "Non existence token");
+        require(_exists(tokenId), "Non existence token");
         return _tokenApproval[tokenId];
     }
 
-    /**
-     * @dev Sets or unsets the approval of a given operator
-     * An operator is allowed to transfer all tokens of the sender on their behalf.
-     * @param to operator address to set the approval
-     * @param approved representing the status of the approval to be set
-     */
     function setApprovalForAll(address to, bool approved)
         public
         virtual
@@ -273,5 +303,26 @@ contract TokenERC721 is IERC721, IERC721Receiver {
         returns (bool)
     {
         return _operatorApprovals[owner][operator];
+    }
+
+    function tokenURI(uint256 tokenId) external view returns (string memory) {
+        require(_exists(tokenId), "URI query for nonexistent token");
+
+        string memory tokenUri = _tokenURI[tokenId];
+        string memory baseURI = _baseURI();
+        if (bytes(baseURI).length == 0) {
+            return tokenUri;
+        }
+        if (bytes(tokenUri).length == 0) {
+            return string(abi.encodePacked(baseURI, tokenUri));
+        }
+        return string(abi.encodePacked(baseURI, tokenId));
+    }
+    function _setTokenUri(uint256 tokenId, string memory _tokenUri) internal virtual{
+        require(_exists(tokenId), "non-existent token id");
+        _tokenURI[tokenId] = _tokenUri;
+    }
+    function _baseURI() internal view virtual returns (string memory) {
+        return _uriBase;
     }
 }
